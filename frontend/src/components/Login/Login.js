@@ -1,8 +1,8 @@
 import axios from "axios";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import styled from "styled-components";
-import { BASE_URL } from "../../context/globalContext";
+import { SignIn, useUser } from "@clerk/clerk-react";
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -10,35 +10,30 @@ const Login = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoader(true);
+  const { isSignedIn, user } = useUser();
 
-    try {
-      const response = await axios.post(`${BASE_URL}/auth/login`, {
-        email: formData.email,
-        password: formData.password,
-      });
+  // With Clerk we use their SignIn component which handles MFA flows (2FA/TOTP/SMS) via Clerk dashboard settings.
+  // Keep the old form state around (for reference / fallback) but redirect when Clerk reports the user is signed in.
+  useEffect(() => {
+    if (isSignedIn) {
+      // Prefer Clerk user's publicMetadata.accountType when present (safer than localStorage)
+      const clerkAccountType = user?.publicMetadata?.accountType || user?.publicMetadata?.account_type;
+      const fallbackAccountType = localStorage.getItem("accountType");
+      const accountType = clerkAccountType || fallbackAccountType;
 
-      const { token, user } = response.data;
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
-
-      const accountType = localStorage.getItem("accountType");
       if (accountType === "business") {
         navigate("/busi");
       } else if (accountType === "personal") {
         navigate("/main");
-      } else if (accountType === "team") {
-        navigate("/dd");
       } else {
-        navigate("/"); // Fallback
+        navigate("/");
       }
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || "Invalid credentials.");
-    } finally {
-      setIsLoader(false);
     }
+  }, [isSignedIn, user, navigate]);
+
+  const handleSubmit = async (e) => {
+    // Keep a noop to avoid form submit page refresh when using the old form markup as fallback
+    e.preventDefault();
   };
 
   const handleChange = (e) => {
@@ -53,41 +48,18 @@ const Login = () => {
     <LoginStyled>
       <div className="form-container">
         <h2>ExpensoMeter Login</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              placeholder="Enter your email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-            />
-          </div>
 
-          <div className="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-            />
-          </div>
+  {/* Clerk SignIn component provides a full hosted sign-in UI including MFA flows configured in your Clerk dashboard. */}
+  {/* Render the SignIn UI inline so it appears on whatever route mounts this Login component. */}
+  <SignIn />
 
-          {errorMessage && <p className="error">{errorMessage}</p>}
-
-          <button type="submit" disabled={isLoader}>
-            {isLoader ? "Loading..." : "Login"}
-          </button>
-
-          <p className="register-link">
-            New to ExpensoMeter? <Link to="/register">Create an account</Link>
-          </p>
+        {/* Optional: keep a minimal fallback form (non-Clerk) if you want to support legacy login; currently left hidden.
+            If you want to enable the legacy form, remove the surrounding comment and implement backend compatibility. */}
+        {/*
+        <form onSubmit={handleSubmit} style={{ display: 'none' }}>
+          ... legacy form markup if needed ...
         </form>
+        */}
       </div>
     </LoginStyled>
   );
